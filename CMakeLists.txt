@@ -42,6 +42,13 @@ endforeach ()
 
 add_custom_target(compile_shaders ALL DEPENDS ${COMPILED_SHADERS})
 
+# -----------------------------
+# Model and texture build files
+# -----------------------------
+
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/models DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/textures DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+
 add_executable(WaterDemo main.cpp)
 
 add_dependencies(WaterDemo compile_shaders)
