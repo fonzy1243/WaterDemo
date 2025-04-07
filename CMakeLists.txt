@@ -8,6 +8,8 @@ find_package(glm)
 find_package(imgui)
 find_package(Vulkan REQUIRED)
 
+include_directories(${CMAKE_SOURCE_DIR}/include)
+
 # ----------------------
 # Shader Compilation
 # ----------------------
