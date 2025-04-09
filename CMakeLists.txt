@@ -73,7 +73,8 @@ add_executable(WaterDemo main.cpp
         simulation/ShallowWaterSolver.h
         simulation/FFTOcean.cpp
         utils/VulkanUtils.cpp
-        utils/VulkanUtils.h)
+        utils/VulkanUtils.h
+        include/tiny_obj_loader.cpp)
 
 add_dependencies(WaterDemo compile_shaders)
 
