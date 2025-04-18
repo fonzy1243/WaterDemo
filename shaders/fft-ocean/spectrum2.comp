@@ -1,0 +1,147 @@
+#version 460
+
+layout (local_size_x = 16, local_size_y = 16) in;
+layout (rg16f, binding = 0) uniform image2D spectrum;
+
+const float two_pi = 6.28318;
+
+layout(push_constant) uniform params {
+    vec2 resolution;
+    vec2 w_hat;// wind direction
+    float V;// wind speed
+    float g;// gravitational constant
+    float A;// numeric constant
+    float t;// time
+} SimulationParams;
+
+float L;
+
+vec2 e_powi(float x) {
+    return vec2(cos(x), sin(x));
+}
+
+vec2 c_conj(vec2 c) {
+    return vec2(c.x, -c.y);
+}
+
+float omega(float k) {
+    // Ensure k is not too small to avoid numerical instability
+    k = max(k, 0.0001);
+    return sqrt(SimulationParams.g * k);
+}
+
+vec2 complex_mult(vec2 c1, vec2 c2) {
+    float x = c1.x;
+    float y = c1.y;
+    float a = c2.x;
+    float b = c2.y;
+    return vec2(a * x - b * y, a * y + b * x);
+}
+
+float rand(vec2 co) {
+    return clamp(fract(sin(dot(co, vec2(12.6969, 78.233))) * 43758.5453), 0.001, 0.999);
+}
+
+vec2 gauss_rand(vec2 seed) {
+    // Use multiple offsets for more varied random distributions
+    vec2 seed1 = seed;
+    vec2 seed2 = seed + vec2(0.45, 0.99);
+
+    float U1 = rand(seed1);
+    float U2 = rand(seed2);
+
+    // Box-Muller transform
+    float R = sqrt(-2.0 * log(U1));
+    float z0 = R * cos(two_pi * U2);
+    float z1 = R * sin(two_pi * U2);
+
+    return vec2(z0, z1);
+}
+
+float Ph(vec2 k, float k_length) {
+    // Protect against division by zero with a minimum value
+    k_length = max(k_length, 0.0001);
+
+    // Normalized k vector
+    vec2 k_hat = k / k_length;
+
+    // Wind factor - squared dot product with wind direction
+    float wind_factor = dot(k_hat, normalize(SimulationParams.w_hat));
+    wind_factor = wind_factor * wind_factor;
+
+    // Phillips spectrum with dampening for small waves
+    float k_squared = k_length * k_length;
+    float kL = k_length * L;
+    float phillips = SimulationParams.A * exp(-1.0 / (kL * kL)) / (k_squared * k_squared);
+
+    // Apply wind directional factor
+    phillips *= wind_factor;
+
+    // High-frequency cutoff to reduce aliasing
+    phillips *= exp(-k_squared * 0.001);
+
+    return phillips;
+}
+
+vec2 h0_tilde(vec2 k, float k_length) {
+    // Create slightly offset seeds for more varied random distribution
+    vec2 offset1 = mod(k, 10.0);
+    vec2 offset2 = mod(k + vec2(0.15, -0.6), 10.0);
+
+    vec2 xi = gauss_rand(offset1);
+
+    // Get spectrum amplitude
+    float spectrum_amplitude = sqrt(Ph(k, k_length) / 2.0);
+
+    return spectrum_amplitude * xi;
+}
+
+vec2 h_tilde(vec2 k) {
+    float k_length = length(k);
+
+    // Guard against very small k values
+    if (k_length < 0.0001) {
+        return vec2(0.0, 0.0);
+    }
+
+    // Get initial wave state
+    vec2 h0Tilde = h0_tilde(k, k_length);
+
+    // Get conjugate wave state (for negative k)
+    vec2 h0TildeConj = c_conj(h0_tilde(-k, k_length));
+
+    // Calculate dispersion over time for both components
+    float w_kt = omega(k_length) * SimulationParams.t;
+
+    // Complex exponentials for time evolution
+    vec2 term1 = complex_mult(h0Tilde, e_powi(w_kt));
+    vec2 term2 = complex_mult(h0TildeConj, e_powi(-w_kt));
+
+    // Combine terms
+    return term1 + term2;
+}
+
+void main() {
+    // Calculate L based on wind speed and gravity
+    L = SimulationParams.V * SimulationParams.V / max(SimulationParams.g, 0.001);
+
+    ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 dims = imageSize(spectrum);
+
+    if (coords.x >= dims.x || coords.y >= dims.y) return;
+
+    // Map coordinates to wavenumbers with proper scaling
+    // Center the spectrum around (0,0)
+    vec2 k;
+    k.x = (two_pi * (coords.x - dims.x / 2.0)) / SimulationParams.resolution.x;
+    k.y = (two_pi * (coords.y - dims.y / 2.0)) / SimulationParams.resolution.y;
+
+    // Apply a scaling factor to control the frequency range
+    k *= 0.5;
+
+    // Generate height field spectrum
+    vec2 hTilde = h_tilde(k);
+
+    // Store the result
+    imageStore(spectrum, coords, vec4(hTilde, 0.0, 1.0));
+}
