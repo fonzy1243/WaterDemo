@@ -3,52 +3,66 @@
 layout(local_size_x = 16, local_size_y = 16) in;
 layout(rgba32f, binding = 0) uniform image2D butterfly;
 
-const float pi = 3.14159265358979323846;
-const float tau = 6.28318530718;
+const float PI = 3.14159265358979323846;
 
 layout(push_constant) uniform Params {
     int resolution;
 } params;
 
-// Complex multiplication
-vec2 complex_mult(vec2 a, vec2 b) {
-    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
-}
-
-// e^{ix}
-vec2 e_powi(float x) {
+// Euler's formula: e^(ix) = cos(x) + i*sin(x)
+vec2 eulerFormula(float x) {
     return vec2(cos(x), sin(x));
 }
 
+// Bit reversal function
+uint bitReverse(uint value, uint bits) {
+    uint result = 0;
+    for (uint i = 0; i < bits; i++) {
+        result = (result << 1) | (value & uint(1));
+        value >>= 1;
+    }
+    return result;
+}
+
 void main() {
-    ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
     int n = params.resolution;
-    int width = int(log2(float(n)));
+    int logN = int(log2(float(n)));
 
-    int stage = coords.x;
-    int y_current = coords.y;
-    int y_t, y_b;
+    if (id.x >= logN || id.y >= n) return;
 
-    if (stage >= width || y_current >= n) return;
+    // Calculate k value
+    float k = mod(id.y * (float(n) / pow(2.0, float(id.x + 1))), n);
 
-    int wing = y_current % (1 << (stage + 1));
+    // Calculate twiddle factor
+    vec2 twiddle = eulerFormula(-2.0 * PI * k / float(n));
 
-    int two_stage = 1 << stage;
+    // Calculate butterfly step
+    float butterflyStep = pow(2.0, float(id.x));
 
-    if (wing <= two_stage) {
-        y_t = y_current;
-        y_b = y_current + two_stage;
-    } else {
-        y_t = y_current - two_stage;
-        y_b = y_current;
+    // Determine butterfly wing position
+    float butterflyWing;
+    if (mod(id.y, pow(2.0, float(id.x + 1))) <= pow(2.0, float(id.x)))
+    butterflyWing = 1.0;
+    else
+    butterflyWing = -1.0;
+
+    // Calculate butterfly indices
+    uint y1 = id.y;
+    uint y2 = id.y;
+
+    // Offset indices based on wing
+    if (butterflyWing == 1.0)
+    y2 += uint(butterflyStep);
+    else
+    y1 -= uint(butterflyStep);
+
+    // Apply bit reversal for first stage
+    if (id.x == 0) {
+        y1 = bitReverse(y1, uint(logN));
+        y2 = bitReverse(y2, uint(logN));
     }
 
-    int k = int(y_current * n / float(1 << (stage + 1))) % n;
-
-    float angle = (-2 * pi * k / n);
-    vec2 W = vec2(cos(angle), sin(angle));
-
-    // Store precomputed values
-    vec4 value = vec4(W.x, W.y, float(y_t), float(y_b));
-    imageStore(butterfly, coords, value);
+    // Store values in texture
+    imageStore(butterfly, id, vec4(twiddle.x, twiddle.y, float(y1), float(y2)));
 }
