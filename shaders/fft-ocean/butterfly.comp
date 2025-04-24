@@ -1,0 +1,54 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(rgba32f, binding = 0) uniform image2D butterfly;
+
+const float pi = 3.14159265358979323846;
+const float tau = 6.28318530718;
+
+layout(push_constant) uniform Params {
+    int resolution;
+} params;
+
+// Complex multiplication
+vec2 complex_mult(vec2 a, vec2 b) {
+    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+// e^{ix}
+vec2 e_powi(float x) {
+    return vec2(cos(x), sin(x));
+}
+
+void main() {
+    ivec2 coords = ivec2(gl_GlobalInvocationID.xy);
+    int n = params.resolution;
+    int width = int(log2(float(n)));
+
+    int stage = coords.x;
+    int y_current = coords.y;
+    int y_t, y_b;
+
+    if (stage >= width || y_current >= n) return;
+
+    int wing = y_current % (1 << (stage + 1));
+
+    int two_stage = 1 << stage;
+
+    if (wing <= two_stage) {
+        y_t = y_current;
+        y_b = y_current + two_stage;
+    } else {
+        y_t = y_current - two_stage;
+        y_b = y_current;
+    }
+
+    int k = int(y_current * n / float(1 << (stage + 1))) % n;
+
+    float angle = (-2 * pi * k / n);
+    vec2 W = vec2(cos(angle), sin(angle));
+
+    // Store precomputed values
+    vec4 value = vec4(W.x, W.y, float(y_t), float(y_b));
+    imageStore(butterfly, coords, value);
+}
