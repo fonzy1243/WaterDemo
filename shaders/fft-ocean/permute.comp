@@ -1,0 +1,24 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(rgba32f, binding = 0) uniform image2D pingPong0;
+layout(rgba32f, binding = 1) uniform image2D pingPong1;
+
+layout(push_constant) uniform Params {
+    int resolution;
+} params;
+
+void main() {
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+
+    float perms[] = { -1, 1 };
+    uint index = uint((id.x + id.y) % 2);
+    float perm = perms[index];
+
+    float h_x = perm * (imageLoad(pingPong1, id.xy).x / float(params.resolution * params.resolution)) * 100;
+    float h_y = perm * (imageLoad(pingPong1, id.xy).y / float(params.resolution * params.resolution)) * 100;
+    float h_z = perm * (imageLoad(pingPong1, id.xy).z / float(params.resolution * params.resolution)) * 100;
+
+    imageStore(pingPong0, id.xy, vec4(h_x, h_y, h_z, 1));
+}
