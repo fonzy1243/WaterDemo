@@ -48,6 +48,10 @@ namespace vkinit {
 
     vk::ImageCreateInfo image_create_info(vk::Format format, vk::ImageUsageFlags usageFlags, vk::Extent3D extent);
     vk::ImageViewCreateInfo imageview_create_info(vk::Format, vk::Image image, vk::ImageAspectFlags aspectFlags);
+    vk::PipelineLayoutCreateInfo pipeline_layout_create_info();
+    vk::PipelineShaderStageCreateInfo pipeline_shader_stage_create_info(vk::ShaderStageFlagBits stage,
+                                                                        vk::ShaderModule shaderModule,
+                                                                        const char *entry = "main");
 } // namespace vkinit
 
 #endif // VK_INITIALIZERS_H

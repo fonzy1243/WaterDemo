@@ -1,6 +1,7 @@
 #include "vk_images.h"
 #include "vk_initializers.h"
 
+
 void vkutil::transition_image(vk::CommandBuffer cmd, vk::Image image, vk::ImageLayout currentLayout,
                               vk::ImageLayout newLayout) {
     vk::ImageAspectFlags aspectMask = (newLayout == vk::ImageLayout::eDepthAttachmentOptimal)
@@ -52,7 +53,7 @@ void vkutil::copy_image_to_image(vk::CommandBuffer cmd, vk::Image source, vk::Im
                                           .setDstImageLayout(vk::ImageLayout::eTransferDstOptimal)
                                           .setSrcImage(source)
                                           .setSrcImageLayout(vk::ImageLayout::eTransferSrcOptimal)
-                                          .setFilter(vk::Filter::eLinear)
+                                          .setFilter(vk::Filter::eNearest)
                                           .setRegionCount(1)
                                           .setPRegions(&blitRegion);
 
