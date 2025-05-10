@@ -29,20 +29,20 @@ void main() {
     int n = params.resolution;
     int logN = int(log2(float(n)));
 
-    if (id.x >= logN || id.y >= n) return;
+    //    if (id.x >= logN || id.y >= n) return;
 
     // Calculate k value
-    float k = mod(id.y * (float(n) / pow(2.0, float(id.x + 1))), n);
+    float k = mod(id.y * (float(n) / pow(2.0, id.x + 1)), n);
 
     // Calculate twiddle factor
-    vec2 twiddle = eulerFormula(-2.0 * PI * k / float(n));
+    vec2 twiddle = eulerFormula(-2.0 * PI * k / n);
 
     // Calculate butterfly step
-    float butterflyStep = pow(2.0, float(id.x));
+    float butterflyStep = pow(2.0, id.x);
 
     // Determine butterfly wing position
     float butterflyWing;
-    if (mod(id.y, pow(2.0, float(id.x + 1))) <= pow(2.0, float(id.x)))
+    if (mod(id.y, pow(2.0, id.x + 1)) < pow(2.0, id.x))
     butterflyWing = 1.0;
     else
     butterflyWing = -1.0;
