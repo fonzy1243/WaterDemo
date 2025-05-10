@@ -1,0 +1,11 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(rgba32f, binding = 0) uniform image2D pingPong0;
+layout(rgba32f, binding = 1) uniform image2D pingPong1;
+
+void main() {
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+    vec4 temp = imageLoad(pingPong0, id);
+    imageStore(pingPong1, id, temp);
+}
