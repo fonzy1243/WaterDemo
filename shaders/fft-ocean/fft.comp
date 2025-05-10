@@ -1,0 +1,69 @@
+#version 460
+
+layout(local_size_x = 16, local_size_y = 16) in;
+
+layout(rgba32f, binding = 0) uniform image2D pingPong0;
+layout(rgba32f, binding = 1) uniform image2D pingPong1;
+layout(rgba32f, binding = 2) uniform image2D butterfly;
+
+layout(push_constant) uniform Params {
+    int stage;
+    int direction;
+    int resolution;// 0 = horizontal
+    int pingPong;
+} params;
+
+vec2 complexMult(vec2 a, vec2 b) {
+    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+void main() {
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+    int stage = params.stage;
+    int n = params.resolution;
+    int pingPong = params.pingPong;
+
+    vec4 butterflyData;
+    vec2 twiddle, topSignal, bottomSignal;
+    vec2 h;
+
+    if (params.direction == 0) { // horizontal
+        butterflyData = imageLoad(butterfly, ivec2(stage, id.x));
+        twiddle = butterflyData.xy;
+
+        if (pingPong == 0) {
+            topSignal = imageLoad(pingPong0, ivec2(butterflyData.z, id.y)).xy;
+            bottomSignal = imageLoad(pingPong0, ivec2(butterflyData.w, id.y)).xy;
+
+            h = topSignal + complexMult(twiddle, bottomSignal);
+
+            imageStore(pingPong1, id, vec4(h, 0, 1));
+        } else {
+            topSignal = imageLoad(pingPong1, ivec2(butterflyData.z, id.y)).xy;
+            bottomSignal = imageLoad(pingPong1, ivec2(butterflyData.w, id.y)).xy;
+
+            h = topSignal + complexMult(twiddle, bottomSignal);
+
+            imageStore(pingPong0, id, vec4(h, 0, 1));
+        }
+    } else {
+        butterflyData = imageLoad(butterfly, ivec2(stage, id.y));
+        twiddle = butterflyData.xy;
+
+        if (pingPong == 0) {
+            topSignal = imageLoad(pingPong0, ivec2(id.x, butterflyData.z)).xy;
+            bottomSignal = imageLoad(pingPong0, ivec2(id.x, butterflyData.w)).xy;
+
+            h = topSignal + complexMult(twiddle, bottomSignal);
+
+            imageStore(pingPong1, id, vec4(h, 0, 1));
+        } else {
+            topSignal = imageLoad(pingPong1, ivec2(id.x, butterflyData.z)).xy;
+            bottomSignal = imageLoad(pingPong1, ivec2(id.x, butterflyData.w)).xy;
+
+            h = topSignal + complexMult(twiddle, bottomSignal);
+
+            imageStore(pingPong0, id, vec4(h, 0, 1));
+        }
+    }
+}
