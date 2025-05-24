@@ -72,6 +72,20 @@ struct GPUDrawPushConstants {
     vk::DeviceAddress vertexBuffer;
 };
 
+struct OceanFragConstats {
+    alignas(16) glm::vec4 ambientColor;
+    alignas(16) glm::vec4 sunlightDirection;
+    alignas(16) glm::vec4 sunlightColor;
+};
+
+struct OceanDrawPushConstants {
+    glm::vec4 ambientColor;
+    glm::vec4 sunlightDirection;
+    glm::vec4 sunlightColor;
+    glm::mat4 worldMatrix;
+    vk::DeviceAddress vertexBuffer;
+};
+
 struct DrawContext;
 
 class IRenderable {
