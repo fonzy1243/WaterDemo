@@ -130,7 +130,7 @@ vec4 norm(vec2 k, vec2 hTilde) {
     vec2 ik_x = vec2(-k.x * hTilde.y, k.x * hTilde.x);
     vec2 ik_y = vec2(-k.y * hTilde.y, k.y * hTilde.x);
 
-    return vec4(ik_x, ik_y);
+    return vec4(ik_x.x, ik_y.x, 1.0, 1.0);
 }
 
 void main() {
