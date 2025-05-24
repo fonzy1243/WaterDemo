@@ -31,6 +31,7 @@
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/transform.hpp>
 
+
 constexpr bool bUseValidationLayers = true;
 
 #define VK_CHECK(x)                                                                                                    \
@@ -69,10 +70,13 @@ void WaterEngine::init() {
     init_default_data();
 
     mainCamera.velocity = glm::vec3(0.f);
-    mainCamera.position = glm::vec3(30.f, -00.f, -085.f);
+    // mainCamera.position = glm::vec3(30.f, -00.f, -085.f);
+    mainCamera.position = glm::vec3(00.f, -00.f, 005.f);
 
     mainCamera.pitch = 0;
     mainCamera.yaw = 0;
+
+    sceneData.sunlightDirection = glm::vec4(0, 1000, 30, 100.f);
 
     // Delete when done
     std::string structurePath = {"..\\assets\\structure.glb"};
@@ -125,7 +129,7 @@ void WaterEngine::draw() {
     try {
         update_scene();
 
-        vk::Result waitResult = _device.waitForFences(1, &get_current_frame()._renderFence, true, 1000000000);
+        vk::Result waitResult = _device.waitForFences(1, &get_current_frame()._renderFence, true, 10000000000);
 
         get_current_frame()._deletionQueue.flush();
 
@@ -258,6 +262,8 @@ void WaterEngine::draw() {
 void WaterEngine::run() {
     SDL_Event e;
     bool bQuit = false;
+    bool cameraMovementEnabled = true;
+    SDL_SetWindowRelativeMouseMode(_window, true);
 
     while (!bQuit) {
         while (SDL_PollEvent(&e) != 0) {
@@ -276,7 +282,15 @@ void WaterEngine::run() {
                 resize_requested = true;
             }
 
-            mainCamera.processSDLEvent(e);
+            if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) {
+                cameraMovementEnabled = !cameraMovementEnabled;
+                SDL_SetWindowRelativeMouseMode(_window, cameraMovementEnabled);
+            }
+
+            if (cameraMovementEnabled) {
+                mainCamera.processSDLEvent(e);
+            }
+
             ImGui_ImplSDL3_ProcessEvent(&e);
         }
 
@@ -298,8 +312,9 @@ void WaterEngine::run() {
 
             ImGui::Text("Selected effect: ", selected.name);
 
-            ImGui::Checkbox("Show Heightmap", &showHeightmap);
+            // ImGui::Checkbox("Show Heightmap", &showHeightmap);
 
+            ImGui::InputFloat4("Sunlight Direction", reinterpret_cast<float *>(&sceneData.sunlightDirection));
             ImGui::InputFloat2("Wind Direction", reinterpret_cast<float *>(&selected.parameters.windDirection));
             ImGui::SliderFloat("Wind Speed", &selected.parameters.windSpeed, 0, 100);
             ImGui::SliderFloat("Gravity", &selected.parameters.g, 0, 100);
@@ -726,7 +741,8 @@ void WaterEngine::init_compute_images() {
     vk::Extent3D oceanSize = vk::Extent3D{OCEAN_SIZE_INT, OCEAN_SIZE_INT, 1};
     vk::Extent3D butterflySize = vk::Extent3D{static_cast<uint32_t>(log2(OCEAN_SIZE_INT)), OCEAN_SIZE_INT, 1};
     vk::ImageUsageFlags imageUsages = vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst |
-                                      vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eColorAttachment;
+                                      vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eColorAttachment |
+                                      vk::ImageUsageFlagBits::eSampled;
 
     _spectrumImage = create_image(oceanSize, vk::Format::eR32G32B32A32Sfloat, imageUsages, false);
     _spectrumNormalImage = create_image(oceanSize, vk::Format::eR32G32B32A32Sfloat, imageUsages, false);
@@ -748,39 +764,67 @@ void WaterEngine::init_compute_images() {
 }
 
 void WaterEngine::init_default_data() {
-    // std::array<Vertex, 4> rect_vertices;
-    //
-    // rect_vertices[0].position = {0.5, -0.5, 0};
-    // rect_vertices[1].position = {0.5, 0.5, 0};
-    // rect_vertices[2].position = {-0.5, -0.5, 0};
-    // rect_vertices[3].position = {-0.5, 0.5, 0};
-    //
-    // rect_vertices[0].color = {0, 0, 0, 1};
-    // rect_vertices[1].color = {0.5, 0.5, 0.5, 1};
-    // rect_vertices[2].color = {1, 0, 0, 1};
-    // rect_vertices[3].color = {0, 1, 0, 1};
-    //
-    // rect_vertices[0].uv_x = 1;
-    // rect_vertices[0].uv_y = 0;
-    // rect_vertices[1].uv_x = 0;
-    // rect_vertices[1].uv_y = 0;
-    // rect_vertices[2].uv_x = 1;
-    // rect_vertices[2].uv_y = 1;
-    // rect_vertices[3].uv_x = 0;
-    // rect_vertices[3].uv_y = 1;
-    //
-    // std::array<uint32_t, 6> rect_indices;
-    //
-    // rect_indices[0] = 0;
-    // rect_indices[1] = 1;
-    // rect_indices[2] = 2;
-    //
-    // rect_indices[3] = 2;
-    // rect_indices[4] = 1;
-    // rect_indices[5] = 3;
-    //
-    // rectangle = uploadMesh(rect_indices, rect_vertices);
-    //
+    std::vector<Vertex> rect_vertices;
+    std::vector<uint32_t> rect_indices;
+
+    // Pre-allocate memory to avoid reallocations
+    rect_vertices.reserve((GRID_SIZE + 1) * (GRID_SIZE + 1));
+    rect_indices.reserve(GRID_SIZE * GRID_SIZE * 6);
+
+    const float scale_factor = GRID_SCALE / static_cast<float>(GRID_SIZE);
+
+    const float total_width = GRID_SIZE * scale_factor;
+    const float total_height = GRID_SIZE * scale_factor;
+
+    const float offset_x = total_width / 2.f;
+    const float offset_z = total_height / 2.f;
+
+    // Generate vertices with minimal calculations inside the loops
+    for (int z = 0; z <= GRID_SIZE; z++) {
+        const float z_coord = z * scale_factor - offset_z;
+        const float uv_y = z / static_cast<float>(GRID_SIZE);
+        for (int x = 0; x <= GRID_SIZE; x++) {
+            const float x_coord = x * scale_factor - offset_x;
+            const float uv_x = x / static_cast<float>(GRID_SIZE);
+
+            Vertex v;
+            v.position = {x_coord, 0.0f, z_coord};
+            v.color = {0.1f, 0.3f, 0.5f, 1.0f};
+            v.uv_x = uv_x;
+            v.uv_y = uv_y;
+            rect_vertices.push_back(v);
+        }
+    }
+
+    std::cout << "First loop done" << std::endl;
+
+    // More efficient index generation
+    const uint32_t row_size = GRID_SIZE + 1;
+    for (int z = 0; z < GRID_SIZE; z++) {
+        for (int x = 0; x < GRID_SIZE; x++) {
+            const uint32_t base = z * row_size + x;
+
+            // First triangle
+            rect_indices.push_back(base);
+            rect_indices.push_back(base + 1);
+            rect_indices.push_back(base + row_size);
+
+            // Second triangle
+            rect_indices.push_back(base + 1);
+            rect_indices.push_back(base + row_size + 1);
+            rect_indices.push_back(base + row_size);
+        }
+    }
+
+    std::cout << "Second loop done" << std::endl;
+
+    rectangle = uploadMesh(rect_indices, rect_vertices);
+
+    _mainDeletionQueue.push_function([=, this]() {
+        destroy_buffer(rectangle.vertexBuffer);
+        destroy_buffer(rectangle.indexBuffer);
+    });
+
     uint32_t white = glm::packUnorm4x8(glm::vec4(1, 1, 1, 1));
     _whiteImage = create_image((void *) &white, vk::Extent3D{1, 1, 1}, vk::Format::eR8G8B8A8Unorm,
                                vk::ImageUsageFlagBits::eSampled);
@@ -978,8 +1022,13 @@ void WaterEngine::init_descriptors() {
 
         _frames[i]._frameDescriptors = DescriptorAllocatorGrowable{};
         _frames[i]._frameDescriptors.init(_device, 1000, frame_sizes);
+        _frames[i]._oceanDescriptors = DescriptorAllocatorGrowable{};
+        _frames[i]._oceanDescriptors.init(_device, 1000, frame_sizes);
 
-        _mainDeletionQueue.push_function([&, i]() { _frames[i]._frameDescriptors.destroy_pools(_device); });
+        _mainDeletionQueue.push_function([&, i]() {
+            _frames[i]._frameDescriptors.destroy_pools(_device);
+            _frames[i]._oceanDescriptors.destroy_pools(_device);
+        });
     }
 }
 
@@ -1028,28 +1077,12 @@ void WaterEngine::draw_geometry(vk::CommandBuffer cmd) {
 
     vk::DescriptorSet globalDescriptor =
             get_current_frame()._frameDescriptors.allocate(_device, _gpuSceneDataDescriptorLayout);
+    _oceanDescriptors = get_current_frame()._oceanDescriptors.allocate(_device, _oceanLayout);
 
     DescriptorWriter writer;
     writer.write_buffer(0, gpuSceneDataBuffer.buffer, sizeof(GPUSceneData), 0, vk::DescriptorType::eUniformBuffer);
     writer.update_set(_device, globalDescriptor);
 
-    // for (const RenderObject &draw: mainDrawContext.OpaqueSurfaces) {
-    //     cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->pipeline);
-    //     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->layout, 0, 1,
-    //                            &globalDescriptor, 0, nullptr);
-    //     cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->layout, 1, 1,
-    //                            &draw.material->materialSet, 0, nullptr);
-    //
-    //     cmd.bindIndexBuffer(draw.indexBuffer, 0, vk::IndexType::eUint32);
-    //
-    //     GPUDrawPushConstants pushConstants{};
-    //     pushConstants.vertexBuffer = draw.vertexBufferAddress;
-    //     pushConstants.worldMatrix = draw.transform;
-    //     cmd.pushConstants(draw.material->pipeline->layout, vk::ShaderStageFlagBits::eVertex, 0,
-    //                       sizeof(GPUDrawPushConstants), &pushConstants);
-    //
-    //     cmd.drawIndexed(draw.indexCount, 1, draw.firstIndex, 0, 0);
-    // }
     auto draw = [&](const RenderObject &draw) {
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->pipeline);
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, draw.material->pipeline->layout, 0, 1,
@@ -1068,13 +1101,37 @@ void WaterEngine::draw_geometry(vk::CommandBuffer cmd) {
         cmd.drawIndexed(draw.indexCount, 1, draw.firstIndex, 0, 0);
     };
 
-    for (auto &r: mainDrawContext.OpaqueSurfaces) {
-        draw(r);
-    }
+    // for (auto &r: mainDrawContext.OpaqueSurfaces) {
+    //     draw(r);
+    // }
+    //
+    // for (auto &r: mainDrawContext.TransparentSurfaces) {
+    //     draw(r);
+    // }
 
-    for (auto &r: mainDrawContext.TransparentSurfaces) {
-        draw(r);
-    }
+    DescriptorWriter oceanWriter;
+    oceanWriter.write_image(0, _heightmapImage.imageView, _defaultSamplerLinear, vk::ImageLayout::eGeneral,
+                            vk::DescriptorType::eCombinedImageSampler);
+    oceanWriter.write_image(1, _normalMapImage.imageView, _defaultSamplerLinear, vk::ImageLayout::eGeneral,
+                            vk::DescriptorType::eCombinedImageSampler);
+    oceanWriter.update_set(_device, _oceanDescriptors);
+
+    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, _oceanPipeline);
+    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, _oceanPipelineLayout, 0, 1, &_oceanDescriptors, 0,
+                           nullptr);
+
+    OceanDrawPushConstants push_constants{};
+    push_constants.ambientColor = sceneData.ambientColor;
+    push_constants.sunlightDirection = sceneData.sunlightDirection;
+    push_constants.sunlightColor = sceneData.sunlightColor;
+    push_constants.worldMatrix = sceneData.viewproj;
+    push_constants.vertexBuffer = rectangle.vertexBufferAddress;
+
+    cmd.pushConstants(_oceanPipelineLayout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0,
+                      sizeof(OceanDrawPushConstants), &push_constants);
+    cmd.bindIndexBuffer(rectangle.indexBuffer.buffer, 0, vk::IndexType::eUint32);
+
+    cmd.drawIndexed((GRID_SIZE * GRID_SIZE * 6), 1, 0, 0, 0);
 
     cmd.endRendering();
 }
@@ -1084,6 +1141,7 @@ void WaterEngine::init_pipelines() {
     // Compute pipelines
     init_background_pipelines();
     // Graphics pipelines
+    init_ocean_pipeline();
 
     metalRoughMaterial.build_pipelines(this);
 }
@@ -1291,6 +1349,64 @@ void WaterEngine::init_background_pipelines() {
         // Permute
         _device.destroyPipelineLayout(_permutePipelineLayout);
         _device.destroyPipeline(_permutePipeline);
+    });
+}
+
+void WaterEngine::init_ocean_pipeline() {
+    vk::ShaderModule oceanVertShader;
+    if (!vkutil::load_shader_module("../shaders/ocean.vert.spv", _device, &oceanVertShader)) {
+        throw std::runtime_error("Failed to load ocean vertex shader");
+    }
+
+    vk::ShaderModule oceanFragShader;
+    if (!vkutil::load_shader_module("../shaders/ocean.frag.spv", _device, &oceanFragShader)) {
+        throw std::runtime_error("Failed to load ocean fragment shader");
+    }
+
+    vk::PushConstantRange bufferRange =
+            vk::PushConstantRange()
+                    .setOffset(0)
+                    .setSize(sizeof(OceanDrawPushConstants))
+                    .setStageFlags(vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+
+    DescriptorLayoutBuilder layoutBuilder;
+    layoutBuilder.add_binding(0, vk::DescriptorType::eCombinedImageSampler);
+    layoutBuilder.add_binding(1, vk::DescriptorType::eCombinedImageSampler);
+
+    _oceanLayout = layoutBuilder.build(_device, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment);
+
+    vk::PipelineLayoutCreateInfo pipelineLayoutCreateInfo = vk::PipelineLayoutCreateInfo()
+                                                                    .setSetLayoutCount(1)
+                                                                    .setPSetLayouts(&_oceanLayout)
+                                                                    .setPPushConstantRanges(&bufferRange)
+                                                                    .setPushConstantRangeCount(1);
+
+    _oceanPipelineLayout = _device.createPipelineLayout(pipelineLayoutCreateInfo);
+
+    PipelineBuilder pipelineBuilder;
+    pipelineBuilder.set_shaders(oceanVertShader, oceanFragShader);
+    pipelineBuilder.set_input_topology(vk::PrimitiveTopology::eTriangleList);
+    pipelineBuilder.set_polygon_mode(vk::PolygonMode::eFill);
+    pipelineBuilder.set_cull_mode(vk::CullModeFlagBits::eNone, vk::FrontFace::eClockwise);
+    pipelineBuilder.set_multisampling_none();
+    pipelineBuilder.disable_blending();
+    pipelineBuilder.enable_depthtest(true, vk::CompareOp::eGreaterOrEqual);
+
+    // render format
+    pipelineBuilder.set_color_attachment_format(_drawImage.imageFormat);
+    pipelineBuilder.set_depth_format(_depthImage.imageFormat);
+
+    pipelineBuilder._pipelineLayout = _oceanPipelineLayout;
+
+    _oceanPipeline = pipelineBuilder.build_pipeline(_device);
+
+    _device.destroyShaderModule(oceanVertShader);
+    _device.destroyShaderModule(oceanFragShader);
+
+    _mainDeletionQueue.push_function([=, this]() {
+        _device.destroyDescriptorSetLayout(_oceanLayout);
+        _device.destroyPipelineLayout(_oceanPipelineLayout);
+        _device.destroyPipeline(_oceanPipeline);
     });
 }
 
@@ -1715,8 +1831,8 @@ void WaterEngine::update_scene() {
     sceneData.viewproj = projection * view;
 
     sceneData.ambientColor = glm::vec4(.1f);
-    sceneData.sunlightColor = glm::vec4(1.f);
-    sceneData.sunlightDirection = glm::vec4(0, 1, 0.5, 1.f);
+    sceneData.sunlightColor = glm::vec4({1.f});
+    // sceneData.sunlightDirection = glm::vec4(0, 1000, 30, 100.f);
 
     loadScenes["structure"]->Draw(glm::mat4{1.f}, mainDrawContext);
 }

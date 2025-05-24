@@ -78,6 +78,7 @@ struct FrameData {
 
     DeletionQueue _deletionQueue;
     DescriptorAllocatorGrowable _frameDescriptors;
+    DescriptorAllocatorGrowable _oceanDescriptors;
 };
 
 struct RenderObject {
@@ -110,6 +111,8 @@ public:
     int _frameNumber{0};
     bool stop_rendering{false};
     bool resize_requested{false};
+    int GRID_SIZE{4096};
+    float GRID_SCALE{150};
     vk::Extent2D _windowExtent{1600, 900};
 
     struct SDL_Window *_window{nullptr};
@@ -204,8 +207,10 @@ public:
     int currentOceanEffect{0};
 
     // Ocean vertex and fragment shaders
+    vk::DescriptorSetLayout _oceanLayout;
     vk::PipelineLayout _oceanPipelineLayout;
     vk::Pipeline _oceanPipeline;
+    vk::DescriptorSet _oceanDescriptors;
 
     // Mes pipeline and layout
     vk::PipelineLayout _meshPipelineLayout;
@@ -270,8 +275,7 @@ private:
 
     void init_pipelines();
     void init_background_pipelines();
-    void init_ocean_pipelines();
-    void init_mesh_pipeline();
+    void init_ocean_pipeline();
 
     void create_swapchain(uint32_t width, uint32_t height);
     void destroy_swapchain();
